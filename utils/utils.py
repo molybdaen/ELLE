@@ -3,12 +3,24 @@ __author__ = 'Johannes'
 import gzip
 import cPickle
 import numpy
-import Image
+from PIL import Image
+import os
+from sklearn.metrics import precision_recall_fscore_support
 
 def load_mnist():
-    with gzip.open(r"C:\Users\Johannes\Documents\EEXCESS\useritemmatrix\movielens\ml-1m\mnist.pkl.gz", 'rb') as f:
+    with gzip.open(r"../data/mnist.pkl.gz", 'rb') as f:
         tr,te,vl = cPickle.load(f)
     return tr, te, vl
+
+
+def validate(goldLabels, predictedLabels):
+    (pre, rec, f1, sup) = precision_recall_fscore_support(goldLabels, predictedLabels, beta=1.0, labels=["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"], pos_label=1, average=None, warn_for=('precision', 'recall', 'f-score'), sample_weight=None)
+    numpy.set_printoptions(precision=3)
+    print pre
+    print rec
+    print f1
+    print sup
+    return (pre, rec, f1, sup)
 
 def visualize_weights(weights, panel_shape, tile_size):
 

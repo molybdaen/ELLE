@@ -11,94 +11,76 @@ import matplotlib.ticker as MT
 import matplotlib.cm as CM
 import cPickle
 
-PATH_DATA_ROOT = r"C:\Users\Johannes\Documents\EEXCESS\useritemmatrix\movielens\ml-1m"
+PATH_DATA_ROOT = r"../data"
 
 
-class MLib:
-    @staticmethod
-    def linear(x):
-        return x
+def linear(x):
+    return x
 
-    @staticmethod
-    def dlinear(x):
-        return np.ones(x.shape)
+def dlinear(x):
+    return np.ones(x.shape)
 
-    @staticmethod
-    def tanh(x):
-        return np.tanh(x)
+def tanh(x):
+    return np.tanh(x)
 
-    @staticmethod
-    def dtanh(x):
-        tan = MLib.tanh(x)
-        return (1. - tan**2.)
+def dtanh(x):
+    tan = tanh(x)
+    return (1. - tan**2.)
 
-    @staticmethod
-    def sigmoid(x):
-        return 1. / (1. + np.exp(-x))
+def sigmoid(x):
+    return 1. / (1. + np.exp(-x))
 
-    @staticmethod
-    def dsigmoid(x):
-        sig = MLib.sigmoid(x)
-        return sig*(1.-sig)
+def dsigmoid(x):
+    sig = sigmoid(x)
+    return sig*(1.-sig)
 
-    @staticmethod
-    def softmax(x):
-        e = np.exp(x)
-        return e / np.sum(e)#[:, np.newaxis]
+def softmax(x):
+    e = np.exp(x)
+    return e / np.sum(e)#[:, np.newaxis]
 
-    @staticmethod
-    def dsoftmax(x):
-        """
-        NOTE: When computing the gradient of a combination of softmax output and crossentropy error,
-        use :func:`~slowlearning.dsce_error` instead.
-        Computing :func:`~slowlearning.dce_error` and :func:`~slowlearning.dsoftmax` separately is computationally very inefficient
-        :param x:
-        :return: Jacobean matrix. partial derivatives of all outputs :func:`~slowlearning.softmax` with respect to all inputs x
-        """
-        p = MLib.softmax(x)
-        Ds = -np.outer(p, p)
-        di = np.diag_indices(len(x))
-        Ds[di] = p-p**2.
-        return Ds
+def dsoftmax(x):
+    """
+    NOTE: When computing the gradient of a combination of softmax output and crossentropy error,
+    use :func:`~slowlearning.dsce_error` instead.
+    Computing :func:`~slowlearning.dce_error` and :func:`~slowlearning.dsoftmax` separately is computationally very inefficient
+    :param x:
+    :return: Jacobean matrix. partial derivatives of all outputs :func:`~slowlearning.softmax` with respect to all inputs x
+    """
+    p = softmax(x)
+    Ds = -np.outer(p, p)
+    di = np.diag_indices(len(x))
+    Ds[di] = p-p**2.
+    return Ds
 
-    @staticmethod
-    def rec_error(p, y):
-        return 0.5 * np.sum((p - y)**2.)
+def rec_error(p, y):
+    return 0.5 * np.sum((p - y)**2.)
 
-    @staticmethod
-    def drec_error(p, y):
-        return (p - y)
+def drec_error(p, y):
+    return (p - y)
 
-    @staticmethod
-    def dlinrec_error(x, y):
-        return x - y
+def dlinrec_error(x, y):
+    return x - y
 
-    @staticmethod
-    def ceb_error(p, y):
-        eps = 1e-10
-        return - np.sum(y * np.log(p + eps) + (1. - y) * np.log(1. - p + eps))
+def ceb_error(p, y):
+    eps = 1e-10
+    return - np.sum(y * np.log(p + eps) + (1. - y) * np.log(1. - p + eps))
 
-    @staticmethod
-    def dceb_error(p, y):
-        return - y * 1. / p + (1. - y) / (1. - p)
+def dceb_error(p, y):
+    return - y * 1. / p + (1. - y) / (1. - p)
 
-    @staticmethod
-    def dlogceb_error(x, y):
-        p = MLib.sigmoid(x)
-        return - y * (1. - p) + (1. - y) * p
+def dlogceb_error(x, y):
+    p = sigmoid(x)
+    return - y * (1. - p) + (1. - y) * p
 
-    @staticmethod
-    def cem_error(p, y):
-        eps = 1e-10
-        return - np.sum(y * np.log(p + eps))
+def cem_error(p, y):
+    eps = 1e-10
+    return - np.sum(y * np.log(p + eps))
 
-    @staticmethod
-    def dcem_error(p, y):
-        return - y * 1. / p
+def dcem_error(p, y):
+    return - y * 1. / p
 
-    @staticmethod
-    def dsofcem_error(x, y):
-        return MLib.softmax(x)-y
+def dsofcem_error(x, y):
+    return softmax(x)-y
 
 
 class T_Func_Type:
@@ -123,16 +105,16 @@ class Function(object):
         self.f = f
         self.df = df
 
-actFuncs = {T_Func_Type.TANH: Function(MLib.tanh, MLib.dtanh),
-            T_Func_Type.LOGISTIC: Function(MLib.sigmoid, MLib.dsigmoid)}
+actFuncs = {T_Func_Type.TANH: Function(tanh, dtanh),
+            T_Func_Type.LOGISTIC: Function(sigmoid, dsigmoid)}
 
-outFuncs = {T_OutFunc_Type.SOFTMAX: Function(MLib.softmax, MLib.dsoftmax),
-            T_OutFunc_Type.LINEAR: Function(MLib.linear, MLib.dlinear),
-            T_OutFunc_Type.LOGISTIC: Function(MLib.sigmoid, MLib.dsigmoid)}
+outFuncs = {T_OutFunc_Type.SOFTMAX: Function(softmax, dsoftmax),
+            T_OutFunc_Type.LINEAR: Function(linear, dlinear),
+            T_OutFunc_Type.LOGISTIC: Function(sigmoid, dsigmoid)}
 
-errFuncs = {T_ErrFunc_Type.RECONSTRUCTION: Function(MLib.rec_error, MLib.drec_error),
-            T_ErrFunc_Type.CROSS_ENTROPY_BINOMIAL: Function(MLib.ceb_error, MLib.dceb_error),
-            T_ErrFunc_Type.CROSS_ENTROPY_MULTINOMIAL: Function(MLib.cem_error, MLib.dcem_error)}
+errFuncs = {T_ErrFunc_Type.RECONSTRUCTION: Function(rec_error, drec_error),
+            T_ErrFunc_Type.CROSS_ENTROPY_BINOMIAL: Function(ceb_error, dceb_error),
+            T_ErrFunc_Type.CROSS_ENTROPY_MULTINOMIAL: Function(cem_error, dcem_error)}
 
 
 class Utils:
@@ -148,23 +130,26 @@ class Utils:
 
 class OutputModel(object):
     def __init__(self, outFuncType, errFuncType):
-        self.p = outFuncs[outFuncType].f
-        self.E = errFuncs[errFuncType].f
+        self.p = outFuncs[outFuncType]
+        self.E = errFuncs[errFuncType]
         if outFuncType == T_OutFunc_Type.SOFTMAX and errFuncType == T_ErrFunc_Type.CROSS_ENTROPY_MULTINOMIAL:
-            self.dEdx = MLib.dsofcem_error
+            self.dEdx = dsofcem_error
         elif outFuncType == T_OutFunc_Type.LOGISTIC and errFuncType == T_ErrFunc_Type.CROSS_ENTROPY_BINOMIAL:
-            self.dEdx = MLib.dlogceb_error
+            self.dEdx = dlogceb_error
         elif outFuncType == T_OutFunc_Type.LINEAR and errFuncType == T_ErrFunc_Type.RECONSTRUCTION:
-            self.dEdx = MLib.dlinrec_error
+            self.dEdx = dlinrec_error
         else:
-            self.dEdx = lambda x, y: errFuncs[errFuncType].df(outFuncs[outFuncType].f(x), y) * outFuncs[outFuncType].df(x)
+            self.dEdx = "composite"
 
     def cost_out_grad(self, x, y):
-        out = self.p(x)
-        return (self.E(out, y), out, self.dEdx(x, y))
+        out = self.p.f(x)
+        if self.dEdx == "composite":
+            return (self.E.f(out, y), out, self.E.df(self.p.f(x), y) * self.p.df(x))
+        else:
+            return (self.E.f(out, y), out, self.dEdx(x, y))
 
 
-class Autoencoder():
+class Autoencoder(object):
     def __init__(self, nvis=100, nhid=50, eta=0.1, actfunc=actFuncs[T_Func_Type.TANH]):
 
         self.visible_size = nvis
@@ -203,16 +188,14 @@ class Autoencoder():
         g_b1 = np.zeros(self.b1.shape)
         g_b2 = np.zeros(self.b2.shape)
 
-        batchstel = 1. / len(batch[0])
-
         for x in batch:
             a = self._encode(x)
             h = self.actfunc.f(a)
             p = self._decode(h)
 
-            cost += batchstel * MLib.rec_error(p, x)
+            cost += rec_error(p, x)
 
-            deltaOut = batchstel * MLib.drec_error(p, x)
+            deltaOut = drec_error(p, x)
 
             g_W += np.outer(deltaOut, h).T
             g_b2 += deltaOut
@@ -260,6 +243,7 @@ class Autoencoder():
         return batch_cost, g_W, g_b1, g_Wlabel, g_blabel
 
     def train(self, data, epochs=2, batch_size=20, freeIndex=0):
+
         batch_num = len(data) / batch_size
 
         for epoch in xrange(epochs):
@@ -296,103 +280,77 @@ class Autoencoder():
             print "Epoch: %d" % epoch
             print (1. / batch_num) * total_cost
 
-    def predict(self, data, labels):
-        digitdata = []
-        digitlabel = []
-        for digit in range(0,10):
-            digitdat = [self._encode(x) for x in data[labels==digit]]
-            digitlab = labels[labels==digit]
-            digitdata.append(np.vstack(digitdat[0:20]))
-            digitlabel.append(np.vstack(digitlab[0:20]))
+    def predict(self, data):
 
-        npstack = np.vstack(digitdata)
-        nplabs = np.vstack(digitlabel)
-        savemat(r"C:\Users\Johannes\Documents\EEXCESS\useritemmatrix\movielens\ml-1m\mnist-codes.mat", {"mnistcodes": npstack})
-        savemat(r"C:\Users\Johannes\Documents\EEXCESS\useritemmatrix\movielens\ml-1m\mnist-labels.mat", {"mnistlabels": nplabs})
+        if self.OutModel is None:
+            return None
 
-    def visualize_weights(self, W, pixwidth=1, ax=None, grayscale=True):
-        savemat(r"C:\Users\Johannes\Documents\EEXCESS\useritemmatrix\movielens\ml-1m\W.mat", {"W": W})
+        predictedTargets = []
+        predictedLabels = []
 
-        (N, M) = W.shape
-        tN = int(np.sqrt(N))
-        tM = int(np.sqrt(M))
-        W = np.reshape(W.flatten(), (28, 28))
-        (N, M) = W.shape
-        # Need to create a new Axes?
-        if(ax == None):
-            ax = P.figure().gca()
-        # extents = Left Right Bottom Top
-        exts = (0, pixwidth * M, 0, pixwidth * N)
-        if(grayscale):
-            ax.imshow(W,
-                      interpolation='nearest',
-                      cmap=CM.gray,
-                      extent=exts)
-        else:
-            ax.imshow(W,
-                      interpolation='nearest',
-                      extent=exts)
+        for x in data:
+            a = self._encode(x)
+            h = self.actfunc.f(a)
+            o = np.dot(self.Wlabel, h) + self.blabel
+            pred = self.OutModel.p.f(o)
+            idx = np.argmax(pred)
+            predictedTargets.append(pred)
+            predictedLabels.append(idx)
 
-        ax.xaxis.set_major_locator(MT.NullLocator())
-        ax.yaxis.set_major_locator(MT.NullLocator())
-        P.show()
+        return (predictedTargets, predictedLabels)
 
-    def visualize_filters(self):
+    def visualize_filters(self, name=None):
         tile_size = (int(np.sqrt(self.W[0].size)), int(np.sqrt(self.W[0].size)))
         panel_shape = (int(len(self.W)/11)+1, len(self.W) % 11)
         img = utils.visualize_weights(self.W, panel_shape, tile_size)
-        img.show()
-
-    def visualize_data(self, data):
-        tile_size = (int(np.sqrt(data[0].size)), int(np.sqrt(data[0].size)))
-        panel_shape = (int(len(data)/11)+1, len(data) % 11)
-        img = utils.visualize_weights(data, panel_shape, tile_size)
+        if name is not None:
+            img.save(name+".png", "PNG")
         img.show()
 
 
 class ElasticLearning(object):
-    def __init__(self, data, dataset):
-        self.uamat = data
-        self.visibles = self.uamat.shape[1]
-        self.dataset = dataset
+    def __init__(self, data, labels):
+        self.data = data
+        self.targets = labels
+        self.visibles = len(data[0])
 
     def findCode(self, codeLimit=10):
+
         self.tmpW = None
         self.tmpb1 = None
         self.tmpb2 = None
-        for i in xrange(1,codeLimit):
-            print "CodeSize: %d/%d" % (i, codeLimit)
-            self.ae = Autoencoder(nvis=self.visibles, nhid=i)
-            if i == 1:
-                self.ae.train(self.uamat, epochs=3, freeIndex=i-1)
-                self.tmpW = self.ae.W
-                self.tmpb1 = self.ae.b1
-                self.tmpb2 = self.ae.b2
-                # self.ae.visualize_filters()
-            else:
-                self.ae.W[0:i-1] = self.tmpW
-                self.ae.b1[0:i-1] = self.tmpb1
-                self.ae.b2 = self.tmpb2
-                self.ae.train(self.uamat, epochs=3, freeIndex=i-1)
-                self.tmpW = self.ae.W
-                self.tmpb1 = self.ae.b1
-                self.tmpb2 = self.ae.b2
-                # self.ae.visualize_filters()
 
-        # self.ae.visualize_filters()
+        bitRange = range(1, codeLimit+1)
+
+        for (idx, codeSize) in enumerate(bitRange):
+            fixedRange = range(0, idx)
+            print "CodeSize: %d/%d" % (codeSize, codeLimit)
+            self.ae = Autoencoder(nvis=self.visibles, nhid=codeSize)
+            if codeSize == 1:
+                self.ae.train(self.data, epochs=2, freeIndex=idx)
+                self.tmpW = self.ae.W
+                self.tmpb1 = self.ae.b1
+                self.tmpb2 = self.ae.b2
+            else:
+                self.ae.W[fixedRange] = self.tmpW
+                self.ae.b1[fixedRange] = self.tmpb1
+                self.ae.b2 = self.tmpb2
+                self.ae.train(self.data, epochs=2, freeIndex=idx)
+                self.tmpW = self.ae.W
+                self.tmpb1 = self.ae.b1
+                self.tmpb2 = self.ae.b2
+
         self.dump_model()
-        # self.ae = Autoencoder(self.visibles, codeLimit-1)
-        # self.ae.W = self.tmpW
-        # self.ae.b1 = self.tmpb1
-        # self.ae.b2 = self.tmpb2
-        # self.ae.train(self.uamat, epochs=10, batch_size=20, freeIndex=range(0,codeLimit-1))
-        # self.ae.visualize_filters()
+
+    def finetune(self):
+        self.ae.init_supervised(len(self.targets[0]))
+        self.ae.trainSupervised(self.data, self.targets, epochs=10, batch_size=20)
 
     def dump_model(self):
-        cPickle.dump(self.ae, open(PATH_DATA_ROOT+r"\model.pkl", "w"))
+        cPickle.dump(self.ae, open(PATH_DATA_ROOT+r"/model.pkl", "w"))
 
     def load_model(self):
-        self.ae = cPickle.load(open(PATH_DATA_ROOT+r"\model.pkl", "r"))
+        self.ae = cPickle.load(open(PATH_DATA_ROOT+r"/model.pkl", "r"))
         return self.ae
 
 
@@ -448,72 +406,79 @@ class ClusterEvaluation(object):
 
 
 if __name__ == "__main__":
-    # data = MovielensDataset(PATH_DATA_ROOT)
-    # uamat = data.getUsersAttributesMatrix()
-    # print uamat.shape
-    # ae = Autoencoder(30, 9)
-    # ae.train(uamat, epochs=55, freeIndex=range(0,9))
-    # ae.visualize_weights()
 
-    # codeLength = 7
-    #
-    # data = MovielensDataset(PATH_DATA_ROOT)
-    # uamat = data.getUsersAttributesMatrix()
-
+    import time
 
     train_data, test_data, valid_data = utils.load_mnist()
     K = 10
-    ae = Autoencoder(nvis=784, nhid=100, eta=0.1)
-    ae.train(train_data[0], epochs=10, batch_size=500, freeIndex=range(100))
+
+    print "Elastic Learning Algorithm:"
+    ella = ElasticLearning(train_data[0], Utils.code1ofK(train_data[1], 10))
+    strttime = time.time()
+    ella.findCode()
+    endtime = time.time()
+    print "pre-training took %.2f s" % (endtime-strttime)
+    ella.ae.visualize_filters("elastic-pretrained")
+    print "Fine-Tuning with label information:"
+    ella.finetune()
+    ella.ae.visualize_filters("elastic-finetuned")
+    print "Test Model:"
+    (pred_targets, pred_labels) = ella.ae.predict(test_data[0])
+    (pre, rec, f1, sup) = utils.validate(test_data[1], pred_labels)
+    elastic = f1
+
+    print "Composite Learning Algorithm:"
+    ae = Autoencoder(nvis=784, nhid=10, eta=0.1)
+    strttime = time.time()
+    ae.train(train_data[0], epochs=20, batch_size=20, freeIndex=range(10))
+    endtime = time.time()
+    print "pre-training took %.2f s" % (endtime-strttime)
+    ae.visualize_filters("compound-pretrained")
+    print "Fine-Tuning with Label Information"
     ae.init_supervised(K)
-    train_data_targets = Utils.code1ofK(train_data[1], K)
-    ae.trainSupervised(train_data[0], train_data_targets, epochs=10, batch_size=500)
-
-    #
-    # el = ElasticLearning(uamat, data)
-    # el.findCode(codeLength)
-    # ae = el.load_model()
-    # ce = ClusterEvaluation(uamat, ae, codeLength-1)
-    # ce.extractClustering()
-    # ce.printClustering(data)
+    ae.trainSupervised(train_data[0], Utils.code1ofK(train_data[1], K), epochs=10, batch_size=20)
+    ae.visualize_filters("compound-finetuned")
+    print "Test Model:"
+    (pred_targets, pred_labels) = ae.predict(test_data[0])
+    (pre, rec, f1, sup) = utils.validate(test_data[1], pred_labels)
+    compound = f1
 
 
-    # a = np.asarray([0.99, 0.01, 1.01, 0.00])
-    # y = np.asarray([1.0, 0.0, 0.0, 0.0])
-    # print MLib.softmax(a)
-    # print np.sum(MLib.softmax(a))
-    # print MLib.dsoftmax(a)
-    #
-    # om = OutputModel(T_OutFunc_Type.SOFTMAX, T_ErrFunc_Type.CROSS_ENTROPY_MULTINOMIAL)
-    # print om.cost_out_grad(a, y)
-    # print np.dot(MLib.dcem_error(MLib.softmax(a), y), MLib.dsoftmax(a))
-    # print MLib.dsofcem_error(a, y)
-    #
-    # om = OutputModel(T_OutFunc_Type.LOGISTIC, T_ErrFunc_Type.CROSS_ENTROPY_BINOMIAL)
-    # print om.cost_out_grad(a, y)
-    # print MLib.dceb_error(MLib.sigmoid(a), y) * MLib.dsigmoid(a)
-    # print MLib.dlogceb_error(a, y)
-    #
-    # om = OutputModel(T_OutFunc_Type.LINEAR, T_ErrFunc_Type.RECONSTRUCTION)
-    # print om.cost_out_grad(a, y)
-    # print MLib.drec_error(MLib.linear(a), y) * MLib.dlinear(a)
-    # print MLib.dlinrec_error(a, y)
-
-
-
-    # ce = ClusterEvaluation(uamat, ae, codeLength)
-    # ce.extractClustering()
-    # ce.printClustering(data)
-
-    # listDigits = []
-    # for (i, x) in enumerate(train_data[0]):
-    #     print train_data[1][i]
-    #     rec = ae._decode(ae._encode(x))
-    #     listDigits.append(x)
-    #     listDigits.append(rec)
-    #     if i > 47:
-    #         break
-    # ae.visualize_data(np.vstack(listDigits))
+    # ae = Autoencoder(nvis=784, nhid=10, eta=0.1)
+    # ae.train(train_data[0], epochs=20, batch_size=20, freeIndex=range(10))
     # ae.visualize_filters()
-    # ae.predict(train_data[0], train_data[1])
-    # el.findCode(10)
+    # ae.init_supervised(K)
+    # train_data_targets = Utils.code1ofK(train_data[1], K)
+    # ae.trainSupervised(train_data[0], train_data_targets, epochs=10, batch_size=500)
+
+    import matplotlib.pyplot as plt
+    n_groups = 10
+
+    fig, ax = plt.subplots()
+
+    index = np.arange(n_groups)
+    bar_width = 0.35
+
+    opacity = 0.4
+    error_config = {'ecolor': '0.3'}
+
+    rects1 = plt.bar(index, compound, bar_width,
+                     alpha=opacity,
+                     color='b',
+                     error_kw=error_config,
+                     label='Compound')
+
+    rects2 = plt.bar(index + bar_width, elastic, bar_width,
+                     alpha=opacity,
+                     color='r',
+                     error_kw=error_config,
+                     label='Elastic')
+
+    plt.xlabel('Digit Group')
+    plt.ylabel('F1-Score')
+    plt.title('F1-Scores on MNIST by Digit Groups and Method')
+    plt.xticks(index + bar_width, ('0', '1', '2', '3', '4', '5', '6', '7', '8', '9'))
+    plt.legend()
+
+    plt.tight_layout()
+    plt.show()
