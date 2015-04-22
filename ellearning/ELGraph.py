@@ -7,13 +7,68 @@ from numpy import random as rng
 import theano
 
 
+class GraphView(object):
+    def __init__(self, inputnode, outputnode):
+        self.tiers = [[inputnode],[outputnode]]
+        self._instantiated = False
+
+    def instantiate(self):
+        for tier in self.tiers:
+            for n in tier:
+                n.instantiate()
+        self._instantiated = True
+
+    def getDepth(self):
+        return len(self.tiers)
+
+    def getNodesInTier(self, tierIdx):
+        return len(self.tiers[tierIdx])
+
+    def insertTierAt(self, tierIdx):
+        if tierIdx <= 0 or tierIdx > self.getDepth()-1 or self._instantiated:
+            raise utils.GraphStructureError
+        self.tiers.insert(tierIdx, [])
+
+    def addToTier(self, tierIdx, node):
+        if tierIdx <= 0 or tierIdx > self.getDepth()-2 or self._instantiated:
+            raise utils.GraphStructureError
+        self.tiers[tierIdx].append(node)
+        node._setAsInputs(self.tiers[tierIdx-1])
+        node._setAsOutputs(self.tiers[tierIdx+1])
+
+    def __str__(self):
+        return "\n---------\n".join(["\n".join([str(n) for n in tier]) for tier in self.tiers])
+
+    # def delTier(self, tierIdx):
+    #     del self.tiers[tierIdx]
+    #
+    # def delFromTier(self, tierIdx, nodeIdx):
+    #     del self.tiers[tierIdx][nodeIdx]
+
+
 class Graph(object):
 
     NODE_CNT = 0
-    NODES = []
 
-    def __init__(self, data):
+    def __init__(self, inputs, outputs):
+
+        self.inputnode = InputNode(inputs)
+        self.outputnode = OutputNode(outputs, outfunc=T_OutFunc_Type.SOFTMAX, errfunc=T_ErrFunc_Type.CROSS_ENTROPY_MULTINOMIAL)
+        h = HiddenNode()
+
+        self.gview = GraphView(self.inputnode, self.outputnode)
+        self.gview.insertTierAt(1)
+        self.gview.addToTier(1, h)
+        self.gview.instantiate()
+
+    def propagate(self, x, y):
         pass
+
+    def backpropagate(self, x, y):
+        pass
+
+    def __str__(self):
+        return str(self.gview)
 
 
 class T_Node_Type:
@@ -41,18 +96,28 @@ class Node(object):
         self._dim_out = 1
         self._instantiated = False
 
-    def _setInNodes(self, nodes):
+    def _setAsInputs(self, nodes):
         self._inNodes = []
         for n in nodes:
+            n._outNodes.append(self)
             self._inNodes.append(n)
-            self._dim_in += n._dim_out
-        self._nInputs = len(nodes)
+            self._upd_inout()
+        self._upd_inout()
 
-    def _setOutNodes(self, nodes):
+    def _setAsOutputs(self, nodes):
         self._outNodes = []
         for n in nodes:
+            n._inNodes.append(self)
             self._outNodes.append(n)
-        self._nOutputs = len(nodes)
+            n._upd_inout()
+        self._upd_inout()
+
+    def _upd_inout(self):
+        self._dim_in = 0
+        for n in self._inNodes:
+            self._dim_in += n._dim_out
+        self._nInputs = len(self._inNodes)
+        self._nOutputs = len(self._outNodes)
 
     def instantiate(self, weights=None, biases=None):
         raise NotImplementedError
@@ -196,30 +261,5 @@ class OutputNode(Node):
 
 
 if __name__ == "__main__":
-    x = np.asarray([-8., 0.1, 8.])
-    w1 = np.asarray([1., -1., 1.])
-    w2 = np.asarray([-1., 1., -1.])
-
-    inputnode = InputNode(len(x))
-    outputnode = OutputNode(10)
-
-    h1 = HiddenNode()
-    h1._setInNodes([inputnode])
-    h1._setOutNodes([outputnode])
-    h2 = HiddenNode()
-    h2._setInNodes([inputnode])
-    h2._setOutNodes([outputnode])
-
-    inputnode._setOutNodes([h1, h2])
-    outputnode._setInNodes([h1, h2])
-
-    print inputnode
-    print h1
-    print h2
-    print outputnode
-
-    print "Instantiation"
-    nodes = [inputnode, h1, h2, outputnode]
-    for n in nodes:
-        n.instantiate()
-        print n
+    g = Graph(3, 2)
+    print g
