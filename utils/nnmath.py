@@ -125,6 +125,8 @@ errFuncs = {T_ErrFunc_Type.RECONSTRUCTION: Function(rec_error, drec_error),
 
 class OutputModel(object):
     def __init__(self, outFuncType, errFuncType):
+        self.outfunc_t = outFuncType
+        self.errfunc_t = errFuncType
         self.p = outFuncs[outFuncType]
         self.E = errFuncs[errFuncType]
         if outFuncType == T_OutFunc_Type.SOFTMAX and errFuncType == T_ErrFunc_Type.CROSS_ENTROPY_MULTINOMIAL:
@@ -143,3 +145,6 @@ class OutputModel(object):
             return (self.E.f(out, y), out, self.E.df(self.p.f(x), y) * self.p.df(x))
         else:
             return (self.E.f(out, y), out, self.dEdx(x, y))
+
+    def __str__(self):
+        return "<%s: OutputFunction=%s, ErrorFunction=%s>" % (self.__class__.__name__, self.outfunc_t, self.errfunc_t)

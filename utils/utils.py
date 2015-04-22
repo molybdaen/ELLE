@@ -67,3 +67,8 @@ def visualize_weights(weights, panel_shape, tile_size):
     img = Image.fromarray(image)
     img = img.convert('RGB')
     return img
+
+
+class GraphStructureError(Exception):
+    def __init__(self):
+        Exception.__init__(self)
