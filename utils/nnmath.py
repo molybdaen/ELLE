@@ -49,12 +49,13 @@ def dsoftmax(x):
     return Ds
 
 
-def rec_error(p, y):
-    return 0.5 * np.sum((p - y) ** 2.)
+def rec_error(x, p):
+    # return 0.5 * np.sqrt(np.sum((p - y) ** 2.)) ** 2.
+    return 0.5 * (np.sqrt(np.sum((x - p) ** 2.)) ** 2.)
 
 
-def drec_error(p, y):
-    return (p - y)
+def drec_error(x, p):
+    return (p-x)
 
 
 def dlinrec_error(x, y):
@@ -64,7 +65,6 @@ def dlinrec_error(x, y):
 def ceb_error(p, y):
     eps = 1e-10
     return - np.sum(y * np.log(p + eps) + (1. - y) * np.log(1. - p + eps))
-
 
 def dceb_error(p, y):
     return - y * 1. / p + (1. - y) / (1. - p)
@@ -86,6 +86,18 @@ def dcem_error(p, y):
 
 def dsofcem_error(x, y):
     return softmax(x) - y
+
+
+def vec_len(x):
+    return np.sqrt(np.sum(x**2.))
+
+
+def vec_unit(x):
+    return x/vec_len(x)
+
+
+def vec_cosine_sim(x, y):
+    return np.sum(x * y) / (vec_len(x) * vec_len(y))
 
 
 class T_Func_Type:

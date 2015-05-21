@@ -7,7 +7,7 @@ import numpy as np
 from PIL import Image
 from os.path import join
 from sklearn.metrics import precision_recall_fscore_support
-
+from movielens import MovielensDataset
 
 def get_full_path(*path):
     return join(Config.ROOT_DIR, *path)
@@ -18,6 +18,30 @@ def load_mnist():
         tr,te,vl = cPickle.load(f)
     return tr, te, vl
 
+def load_cifar():
+    data = []
+    labels = []
+    for i in range(1,6):
+        fo = open(get_full_path(Config.PATH_DATA_ROOT, Config.CIFAR_DATA_FILE, "data_batch_%d" %i), 'rb')
+        dict = cPickle.load(fo)
+        data.append(dict["data"])
+        labels.append(dict["labels"])
+        fo.close()
+    data = np.vstack(data).astype(np.float)
+    labels = np.hstack(labels)
+    data /= data.max()
+
+    fo = open(get_full_path(Config.PATH_DATA_ROOT, Config.CIFAR_DATA_FILE, "test_batch"), 'rb')
+    dict = cPickle.load(fo)
+    testdata = (dict["data"].astype(np.float) / float(np.max(dict["data"])), np.asarray(dict["labels"]))
+    fo.close()
+    return ((data, labels), testdata)
+
+def load_movielens():
+    data = MovielensDataset(get_full_path(Config.PATH_DATA_ROOT, Config.MOVIELENS_DATA_FILE))
+    uamat = data.getUsersAttributesMatrix()
+    uimat = data.getUserItemMatrix()
+    return uamat, uimat
 
 def code1ofK(labels, K):
     KcodedLabels = []
@@ -28,24 +52,28 @@ def code1ofK(labels, K):
     return KcodedLabels
 
 
-def validate(goldLabels, predictedLabels):
-    (pre, rec, f1, sup) = precision_recall_fscore_support(goldLabels, predictedLabels, beta=1.0, labels=["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"], pos_label=1, average=None, warn_for=('precision', 'recall', 'f-score'), sample_weight=None)
+
+
+def validate(goldLabels, predictedLabels, K):
+    labels = [str(class_label) for class_label in range(K)]
+    (pre, rec, f1, sup) = precision_recall_fscore_support(goldLabels, predictedLabels, beta=1.0, labels=labels, pos_label=1, average=None, warn_for=('precision', 'recall', 'f-score'), sample_weight=None)
     np.set_printoptions(precision=3)
-    print pre
-    print rec
-    print f1
-    print sup
+    # print pre
+    # print rec
+    # print f1
+    # print sup
     return (pre, rec, f1, sup)
 
 
-def visualize_weights(weights, panel_shape, tile_size):
+def _scale(x):
+    eps = 1e-8
+    x = x.copy()
+    x -= x.min()
+    x *= 1.0 / (x.max() + eps)
+    return 255.0*x
 
-    def scale(x):
-        eps = 1e-8
-        x = x.copy()
-        x -= x.min()
-        x *= 1.0 / (x.max() + eps)
-        return 255.0*x
+
+def visualize_weights_GREY(weights, panel_shape, tile_size):
 
     margin_x = np.zeros((tile_size[0], 1)) + 255.
     margin_y = np.zeros((1, (tile_size[1] + 1) * panel_shape[1])) + 255.
@@ -57,7 +85,7 @@ def visualize_weights(weights, panel_shape, tile_size):
         for x in range(panel_shape[1]):
             filterIdx = y * panel_shape[1] + x
             if filterIdx < len(weights):
-                row_of_patches.append(np.hstack([scale(weights[filterIdx].reshape(tile_size)), margin_x]))
+                row_of_patches.append(np.hstack([_scale(weights[filterIdx].reshape(tile_size)), margin_x]))
             else:
                 row_of_patches.append(np.hstack([np.zeros(tile_size), margin_x]))
         rowPatch = np.hstack(row_of_patches)
@@ -68,7 +96,55 @@ def visualize_weights(weights, panel_shape, tile_size):
     img = img.convert('RGB')
     return img
 
+def visualize_weights_RGB(weights, panel_shape=(10, 10)):
+
+    tile_len = np.sqrt(weights.shape[1] / 3)
+    tile_size = (tile_len, tile_len)
+    panel_shape = panel_shape
+
+    margin_x = np.zeros((tile_size[0], 1, 3)) + 255.
+    margin_y = np.zeros((1, (tile_size[1] + 1) * panel_shape[1], 3)) + 255.
+
+    patch_of_rows = []
+    for y in range(panel_shape[0]):
+        # for each row y : plot all filters at columns x
+        row_of_patches = []
+        for x in range(panel_shape[1]):
+            filterIdx = y * panel_shape[1] + x
+            if filterIdx < len(weights):
+                filter = _scale(np.reshape(np.reshape(weights[filterIdx], (3, 1024)).T, (tile_size[0], tile_size[1], 3)))
+                row_of_patches.append(np.hstack([filter, margin_x]))
+            else:
+                row_of_patches.append(np.hstack([np.zeros((tile_size[0], tile_size[1], 3)), margin_x]))
+        rowPatch = np.hstack(row_of_patches)
+        patch_of_rows.append(np.vstack([rowPatch, margin_y]))
+    image = np.vstack(patch_of_rows).astype(np.uint8)
+
+    img = Image.fromarray(image, mode="RGB")
+    return img
+
+
+def visualize_weights(weights, panel_shape, filter_shape, mode):
+    if mode == "RGB":
+        return visualize_weights_RGB(weights, panel_shape)
+    if mode == "GREY":
+        return visualize_weights_GREY(weights, panel_shape, filter_shape)
+
 
 class GraphStructureError(Exception):
     def __init__(self):
         Exception.__init__(self)
+
+
+if __name__ == "__main__":
+    (train, test) = load_cifar()
+    # im = np.reshape(test[0][1], (3, 1024)).T * 254.
+    # im = np.uint8(np.reshape(im, (32, 32, 3)))
+    # print im.shape
+    # img = Image.fromarray(im, mode="RGB")
+    # img.show()
+    im = visualize_weights_RGB(train[0][0:2])
+    im.show()
+    # r = train[0][0:1024]
+    # g = train[0][1024:2048]
+    # b = train[0][2048:3072]

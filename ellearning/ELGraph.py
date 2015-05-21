@@ -1,11 +1,15 @@
 __author__ = 'johannesjurgovsky'
 
+import time
 from utils import utils
 from utils.nnmath import *
 import numpy as np
 from numpy import random as rng
 import theano
-
+from config import Config
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+from itertools import chain
 
 class GraphView(object):
     def __init__(self, inputnode, outputnode):
@@ -39,36 +43,99 @@ class GraphView(object):
     def __str__(self):
         return "\n---------\n".join(["\n".join([str(n) for n in tier]) for tier in self.tiers])
 
-    # def delTier(self, tierIdx):
-    #     del self.tiers[tierIdx]
-    #
-    # def delFromTier(self, tierIdx, nodeIdx):
-    #     del self.tiers[tierIdx][nodeIdx]
+
+class ConnectivityMatrix(object):
+    def __init__(self, file):
+        cm = []
+        for l in open(file, mode='r'):
+            line = []
+            for t in [x.rstrip() for x in l.split(';')]:
+                b = 0
+                if t == '1':
+                    b = 1
+                line.append(b)
+            cm.append(line)
+        self.np_cm = np.asarray(cm)
+
+    def getMask(self):
+        return self.np_cm
+
+    def getSize(self):
+        return self.np_cm.shape
+
+    def showAsImage(self):
+        imglist = [self.np_cm, np.invert(self.np_cm)]
+        fig = plt.figure()
+
+        im = plt.imshow(imglist[0], cmap=plt.get_cmap('gray_r'), vmin=0, vmax=1, interpolation='nearest')
+        def init():
+            im.set_data(imglist[0])
+
+        def updatefig(i):
+            a = im.get_array()
+            # a= a * np.exp(-0.001*i)
+            im.set_array(a)
+            return [im]
+        ani = animation.FuncAnimation(fig, updatefig, init_func=init, frames=100, interval=300, blit=False)
+        plt.show()
 
 
 class Graph(object):
 
     NODE_CNT = 0
 
-    def __init__(self, inputs, outputs):
+    def __init__(self, inputs, outputs, connectivityMatrix, outfunc=T_OutFunc_Type.SOFTMAX, errfunc=T_ErrFunc_Type.CROSS_ENTROPY_MULTINOMIAL):
 
-        self.inputnode = InputNode(inputs)
-        self.outputnode = OutputNode(outputs, outfunc=T_OutFunc_Type.SOFTMAX, errfunc=T_ErrFunc_Type.CROSS_ENTROPY_MULTINOMIAL)
-        h = HiddenNode()
+        self.input_dim = inputs
+        self.output_dim = outputs
 
-        self.gview = GraphView(self.inputnode, self.outputnode)
-        self.gview.insertTierAt(1)
-        self.gview.addToTier(1, h)
-        self.gview.instantiate()
+        self.outfunc = outfunc
+        self.errfunc = errfunc
+
+        self.connectivityMatrix = connectivityMatrix
+
+        self._build()
+
+    def _build(self):
+        self.nodes = [InputNode(self.input_dim)] + [HiddenNode() for a in range(self.connectivityMatrix.getSize()[0]-2)] + [OutputNode(self.output_dim, outfunc=self.outfunc, errfunc=self.errfunc)]
+        for (iIdx, row) in enumerate(self.connectivityMatrix.getMask()):
+            for (oIdx, field) in enumerate(row):
+                if iIdx < oIdx:
+                    if field == 1:
+                        self.nodes[iIdx].addOutputNode(self.nodes[oIdx])
+        for n in self.nodes:
+            n.instantiate()
 
     def propagate(self, x, y):
-        pass
+        evallist = []
+        self.nodes[0]._inCache = x
+        for (colIdx, col) in enumerate(self.connectivityMatrix.getMask().T):
+            nodeIndices = [i for (i, f) in enumerate(col) if f == 1]
+            for i in nodeIndices:
+                if self.nodes[i] not in evallist:
+                    self.nodes[i].propagate(x, y)
+                    evallist.append(self.nodes[i])
+        (out, r) = self.nodes[-1].propagate(x,y)
+        print out
+        return out
+
 
     def backpropagate(self, x, y):
-        pass
+        evallist = []
+        dEdx = self.nodes[-1].backpropagate(x, y)
+        for colIdx in xrange(self.connectivityMatrix.getSize()[1], 0, -1):# enumerate(reversed(self.connectivityMatrix.getMask().T)):
+            nodeIndices = [i for (i, f) in enumerate(self.connectivityMatrix.getMask()[colIdx]) if f == 1]
+            for i in nodeIndices:
+                if self.nodes[i] not in evallist:
+                    self.nodes[i].backpropagate(x, y)
+                    evallist.append(self.nodes[i])
+        (xgrad, r) = self.nodes[0].backpropagate(x, y)
+        print xgrad
+        return xgrad
+
 
     def __str__(self):
-        return str(self.gview)
+        return "\n".join([str(n) for n in self.nodes])
 
 
 class T_Node_Type:
@@ -89,35 +156,22 @@ class Node(object):
         self._id = Graph.NODE_CNT
         self._nodeType = nodeType
         self._inNodes = []
+        self._inCache = []
+        self._gradCache = []
         self._outNodes = []
-        self._nInputs = 0
-        self._nOutputs = 0
         self._dim_in = 0
         self._dim_out = 1
         self._instantiated = False
 
-    def _setAsInputs(self, nodes):
-        self._inNodes = []
-        for n in nodes:
-            n._outNodes.append(self)
-            self._inNodes.append(n)
-            self._upd_inout()
-        self._upd_inout()
+    def addInputNode(self, node):
+        node._outNodes.append(self)
+        self._inNodes.append(node)
+        self._dim_in += node._dim_out
 
-    def _setAsOutputs(self, nodes):
-        self._outNodes = []
-        for n in nodes:
-            n._inNodes.append(self)
-            self._outNodes.append(n)
-            n._upd_inout()
-        self._upd_inout()
-
-    def _upd_inout(self):
-        self._dim_in = 0
-        for n in self._inNodes:
-            self._dim_in += n._dim_out
-        self._nInputs = len(self._inNodes)
-        self._nOutputs = len(self._outNodes)
+    def addOutputNode(self, node):
+        node._inNodes.append(self)
+        node._dim_in += self._dim_out
+        self._outNodes.append(node)
 
     def instantiate(self, weights=None, biases=None):
         raise NotImplementedError
@@ -139,8 +193,35 @@ class Node(object):
         """
         raise NotImplementedError
 
+    def _acceptOut(self, out, node):
+        self._inCache[self._inNodes.index(node)] = out
+
+    def _acceptGrad(self, grad, node):
+        self._gradCache[self._outNodes.index(node)] = grad
+
+    def propagate(self, x, y):
+        missingNodeInputs = [self._inNodes[i] for i, n in enumerate(self._inCache) if n is None]
+        if len(missingNodeInputs) == 0:
+            x = np.hstack(self._inCache)
+            out = self.f(x, y)
+            print "Node %d : type = %s : input = %s : output = %s" % (self._id, self._nodeType, str(self._inCache), str(out))
+            for n in self._outNodes:
+                n._acceptOut(out, self)
+        return (out, missingNodeInputs)
+
+    def backpropagate(self, x, y):
+        missingNodeOutputs = [self._outNodes[i] for i,n in enumerate(self._gradCache) if n is None]
+        if len(missingNodeOutputs) == 0:
+            x = np.hstack(self._inCache)
+            dEdo = np.sum(np.hstack(self._gradCache))
+            dEdx = self.df(x, dEdo)
+            print "Node %d : type = %s : outputGrad = %s : inputGrad = %s" % (self._id, self._nodeType, str(self._gradCache), str(dEdx))
+            for n in self._inNodes:
+                n._acceptGrad(dEdx, self)
+        return (dEdx, missingNodeOutputs)
+
     def __str__(self):
-        return "Node %d (type=%s, nInNodes=%d, nOutNodes=%d, dim_in=%d, dim_out=%d)" % (self._id, self._nodeType, self._nInputs, self._nOutputs, self._dim_in, self._dim_out)
+        return "Node %d (type=%s, nInNodes=%d, nOutNodes=%d, dim_in=%d, dim_out=%d)" % (self._id, self._nodeType, len(self._inNodes), len(self._outNodes), self._dim_in, self._dim_out)
 
 
 class InputNode(Node):
@@ -150,16 +231,17 @@ class InputNode(Node):
         self._dim_in = nin
         self._dim_out = nin
 
-    def _setInNodes(self, nodes):
+    def addInputNode(self, node):
         raise utils.GraphStructureError
 
     def instantiate(self):
         self._instantiated = True
+        self._gradCache = [None] * len(self._outNodes)
 
-    def f(self, x):
+    def f(self, x, y):
         return x
 
-    def df(self, x, dEdo=None):
+    def df(self, x, y, dEdo=None):
         if dEdo is not None:
             return dEdo * np.ones(x.shape)
         else:
@@ -187,22 +269,25 @@ class HiddenNode(Node):
             assert weights.shape == (self._dim_in,)
             self.w = weights
         else:
-            self.w = np.asarray(rng.uniform(low=-4 * np.sqrt(6. / (1 + self._dim_in)), high=4 * np.sqrt(6. / (1 + self._dim_in)), size=(self._dim_in,)), dtype=theano.config.floatX)
+            self.w = np.asarray(rng.uniform(low=-4 * np.sqrt(6. / (self._dim_out + self._dim_in)), high=4 * np.sqrt(6. / (self._dim_out + self._dim_in)), size=(self._dim_in,)), dtype=theano.config.floatX)
 
         if bias is not None:
             assert bias.shape == (self._dim_out,)
             self.b = bias
         else:
-            self.b = np.zeros(shape=(1,), dtype=theano.config.floatX)
+            self.b = np.zeros(shape=(self._dim_out,), dtype=theano.config.floatX)
+        self._inCache = [None] * len(self._inNodes)
+        self._gradCache = [None] * len(self._outNodes)
         self._instantiated = True
 
-    def f(self, x):
+
+    def f(self, x, y):
         a = np.dot(self.w, x) + self.b
         o = self.actfunc.f(a)
         self.cache[hash(x.tostring())] = (a, o, None)
         return o
 
-    def df(self, x, dEdo=None):
+    def df(self, x, y, dEdo=None):
         hx = hash(x.tostring())
         if hx not in self.cache:
             self.f(x)
@@ -222,13 +307,12 @@ class OutputNode(Node):
 
     def __init__(self, nout, outfunc=T_OutFunc_Type.SOFTMAX, errfunc=T_ErrFunc_Type.CROSS_ENTROPY_MULTINOMIAL):
         Node.__init__(self, T_Node_Type.OUTPUT_NODE)
-        self._nOutputs = 0
         self._dim_out = nout
         self.W = None
         self.b = None
         self.OutModel = OutputModel(outfunc, errfunc)
 
-    def _setOutNodes(self, nodes):
+    def addOutputNode(self, node):
         raise utils.GraphStructureError
 
     def instantiate(self, weights=None, biases=None):
@@ -243,6 +327,8 @@ class OutputNode(Node):
             self.b = biases
         else:
             self.b = np.zeros(shape=(self._dim_out,), dtype=theano.config.floatX)
+        self._inCache = [None] * len(self._inNodes)
+        self._gradCache = [None] * len(self._outNodes)
         self._instantiated = True
 
     def f(self, x, y):
@@ -261,5 +347,13 @@ class OutputNode(Node):
 
 
 if __name__ == "__main__":
-    g = Graph(3, 2)
+    x = np.asarray([-1.0, 1.0, 0.5])
+    y = np.asarray([1., 0.])
+    cm = ConnectivityMatrix(utils.get_full_path(Config.PATH_DATA_ROOT, Config.CONNECTIVITY_FILE))
+    g = Graph(3, 2, cm)
+
     print g
+    print "propagation"
+    g.propagate(x, y)
+    cm.showAsImage()
+    g.backpropagate(x, y)
