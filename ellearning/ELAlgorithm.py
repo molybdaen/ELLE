@@ -6,6 +6,12 @@ import cPickle
 from utils import nnmath, utils
 from config import Config
 
+DATA = ()
+
+
+def func():
+    return DATA[0], DATA[1], 10
+
 
 class Autoencoder(object):
 
@@ -163,8 +169,8 @@ class Autoencoder(object):
 
             err_delta = prev_error / curr_error
 
-            if self.log_level > 0: print "Epoch: %d, CEE: %.5f" % (e, curr_error)
-            if self.log_level > 1: print "ErrorDelta: %.5f" % err_delta
+            if self.log_level > 1: print "Epoch: %d, CEE: %.5f" % (e, curr_error)
+            if self.log_level > 2: print "ErrorDelta: %.5f" % err_delta
 
             if epochs is None and err_delta < (1. + stop_err_delta):
                 break
@@ -173,7 +179,7 @@ class Autoencoder(object):
 
         return errors
 
-    def train(self, data, elastic=True, epochs=None, mini_batch_size=None, stop_err_delta=0.1):
+    def train(self, data, elastic=True, epochs=None, mini_batch_size=None, stop_err_delta=0.1, supervisedDataCallback=func):
         """
         Train an autoencoder model on a dataset. You can specify whether all hidden nodes should be trained
         simultaneously or one after another.
@@ -256,8 +262,8 @@ class Autoencoder(object):
 
                 err_delta = prev_error / curr_error
 
-                if self.log_level > 0: print "Epoch: %d, SSE: %.5f" % (e, curr_error)
-                if self.log_level > 1: print "ErrorDelta: %.5f" % err_delta
+                if self.log_level > 1: print "Epoch: %d, SSE: %.5f" % (e, curr_error)
+                if self.log_level > 2: print "ErrorDelta: %.5f" % err_delta
 
                 if epochs is None and err_delta < (1. + stop_err_delta):
                     break
@@ -266,6 +272,16 @@ class Autoencoder(object):
 
             logs[str(h[-1])][Autoencoder.STR_ERRORS] = node_errors
             logs[str(h[-1])][Autoencoder.STR_TIMES] = node_times
+
+            if supervisedDataCallback is not None:
+                if h[-1] == 0 or h[-1] % 10 == 9:
+                    traindata, testdata, K = supervisedDataCallback()
+                    sup_fwd_mask = np.zeros(self.hidden_size, dtype=bool)
+                    sup_fwd_mask[node_indices<=h[-1]] = True
+                    if self.log_level > 2: print "Forward mask:\n%s\nBackward mask:\n%s" % (str(sup_fwd_mask.astype(int)), str(sup_fwd_mask.astype(int)))
+                    self.train_supervised(traindata[0], utils.code1ofK(traindata[1], K), K, sup_fwd_mask, epochs=None, mini_batch_size=20, stop_err_delta=0.001)
+                    (precision, recall, f1) = self.test(testdata[0], testdata[1], K, sup_fwd_mask)
+                    logs[str(h[-1])][Autoencoder.STR_SCORES] = (precision, recall, f1)
 
             if elastic and self.caching:
                 self._add_to_cache(data, fwd_mask)
@@ -351,47 +367,47 @@ class Autoencoder(object):
         return cPickle.load(open(utils.get_full_path(Config.PATH_EVAL_ROOT, r"%s.pkl" % name), "r"))
 
 if __name__ == "__main__":
-    pass
-    # train_data, test_data, valid_data = utils.load_mnist()
-    # MNIST_DATA = (train_data, test_data, valid_data)
+
+    K = 10
+    hidden_size = 200
+    data_name = "mnist"
+    mode_name = "compound"
+    id = (mode_name + "-" + data_name + "-" + str(hidden_size))
+
+    train_data, test_data, valid_data = utils.load_mnist()
+    DATA = (train_data, test_data, valid_data)
+
     # # train_data, test_data = utils.load_cifar()
     # # user_attribute_matrix, user_item_matrix = utils.load_movielens()
-    #
-    # K = 10
-    # hidden_size = 100
-    #
+
     # def test_elastic(hidden_size):
-    #     name = "elastic"
     #     ae = Autoencoder(nvis=len(train_data[0][0]), nhid=hidden_size, log_level=1, caching=True)
     #     strt = time.time()
-    #     logs = ae.train(train_data[0], elastic=True, epochs=None, mini_batch_size=20, stop_err_delta=0.01)
+    #     logs = ae.train(train_data[0], elastic=True, epochs=None, mini_batch_size=20, stop_err_delta=0.01, supervisedDataCallback=func)
     #     end = time.time()
     #     print "Total Training Time: %.3f" % (end-strt)
-    #     ae.visualize_filters("GREY", name=name)
+    #     ae.visualize_filters("GREY", name=id)
     #     return logs
     #
-    # def test_compound(hidden_size):
-    #     name = "compound"
-    #     total_logs = {}
-    #     for i in range(0, hidden_size, 10):
-    #         s = i+1
-    #         ae = Autoencoder(nvis=len(train_data[0][0]), nhid=s, log_level=1, caching=False)
-    #         strt = time.time()
-    #         logs = ae.train(train_data[0], elastic=False, epochs=None, mini_batch_size=20, stop_err_delta=0.01)
-    #         end = time.time()
-    #         print "Total Training Time: %.3f" % (end-strt)
-    #         # ae.dump_model("%s-%d" % (name, str(hidden_size)))
-    #         # ae = Autoencoder.load_model("elastic-3")
-    #         total_logs[str(i)] = logs[str(i)]
-    #     ae.visualize_filters("GREY", name=name)
-    #     return total_logs
-    #
+    def test_compound(hidden_size):
+        total_logs = {}
+        for i in range(0, hidden_size, 10):
+            s = i+1
+            ae = Autoencoder(nvis=len(train_data[0][0]), nhid=s, log_level=1, caching=False)
+            strt = time.time()
+            logs = ae.train(train_data[0], elastic=False, epochs=None, mini_batch_size=20, stop_err_delta=0.01)
+            end = time.time()
+            print "Total Training Time: %.3f" % (end-strt)
+            total_logs[str(i)] = logs[str(i)]
+            ae.visualize_filters("GREY", name=id)
+        return total_logs
+
     # e_logs = test_elastic(hidden_size)
-    # cPickle.dump(e_logs, open(utils.get_full_path(Config.PATH_EVAL_ROOT, "results-elastic.pkl"), 'w'))
-    #
-    # c_logs = test_compound(11)
-    # cPickle.dump(c_logs, open(utils.get_full_path(Config.PATH_EVAL_ROOT, "results-compound.pkl"), 'w'))
-    #
+    # cPickle.dump(e_logs, open(utils.get_full_path(Config.PATH_EVAL_ROOT, "results-%s.pkl" % id), 'w'))
+
+    c_logs = test_compound(hidden_size)
+    cPickle.dump(c_logs, open(utils.get_full_path(Config.PATH_EVAL_ROOT, "results-%s.pkl" % id), 'w'))
+
     # e_logs = cPickle.load(open(utils.get_full_path(Config.PATH_EVAL_ROOT, "results-elastic.pkl"), 'r'))
     # c_logs = cPickle.load(open(utils.get_full_path(Config.PATH_EVAL_ROOT, "results-compound.pkl"), 'r'))
 
