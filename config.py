@@ -12,5 +12,9 @@ class Config(object):
 
     MNIST_DATA_FILE = "mnist.pkl.gz"
     CIFAR_DATA_FILE = "cifar-10-batches-py"
-    MOVIELENS_DATA_FILE = "ml-m1"
+    MOVIELENS_DATA_FILE = "ml-1m"
     CONNECTIVITY_FILE = "basic.csv"
+
+    STR_MNIST = "MNIST"
+    STR_CIFAR = "CIFAR"
+    STR_MOVIELENS = "movielens"

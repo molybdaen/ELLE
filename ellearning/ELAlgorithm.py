@@ -5,12 +5,31 @@ import numpy as np
 import cPickle
 from utils import nnmath, utils
 from config import Config
+import pylab as plt
+from mpl_toolkits.mplot3d import Axes3D, proj3d
+import mpld3
+import matplotlib.pylab as plt
+#plt.rcParams['figure.figsize']=(14,6)
+from utils.movielens import MovielensDataset, Movies, Users, Ratings
+from matplotlib.patches import FancyArrowPatch
 
 DATA = ()
 
 
 def func():
     return DATA[0], DATA[1], 10
+
+
+class Arrow3D(FancyArrowPatch):
+    def __init__(self, xs, ys, zs, *args, **kwargs):
+        FancyArrowPatch.__init__(self, (0,0), (0,0), *args, **kwargs)
+        self._verts3d = xs, ys, zs
+
+    def draw(self, renderer):
+        xs3d, ys3d, zs3d = self._verts3d
+        xs, ys, zs = proj3d.proj_transform(xs3d, ys3d, zs3d, renderer.M)
+        self.set_positions((xs[0],ys[0]),(xs[1],ys[1]))
+        FancyArrowPatch.draw(self, renderer)
 
 
 class Autoencoder(object):
@@ -22,7 +41,7 @@ class Autoencoder(object):
     STR_TIMES = "times"
     STR_SCORES = "scores"
 
-    def __init__(self, nvis, nhid, eta=0.1, caching=True, log_level=1):
+    def __init__(self, nvis, nhid, eta=0.1, corruption_level=0.2, caching=True, log_level=1, actfunc="tanh"):
 
         self.visible_size = nvis
         self.hidden_size = nhid
@@ -35,24 +54,44 @@ class Autoencoder(object):
         self.eta = eta
         self.caching = caching
         self.log_level = log_level
+        self.corruption_level = corruption_level
+
+        if actfunc == "tanh":
+            self.act = self._tanh
+            self.dact = self._tanh_prime
+        elif actfunc == "sig":
+            self.act = self._sigmoid
+            self.dact = self._sigmoid_prime
+        else:
+            self.act = self._sigmoid
+            self.dact = self._sigmoid_prime
 
     def _sigmoid(self, x):
         return 1. / (1. + np.exp(-x))
 
+    def _tanh(self, x):
+        return np.tanh(x)
+
     def _sigmoid_prime(self, y):
         return y * (1. - y)
 
+    def _tanh_prime(self, y):
+        return 1. - y**2.
+
     def _encode(self, x, fwd_mask):
-        return self._sigmoid(np.dot(self.W[fwd_mask], x) + self.b1[fwd_mask])
+        return self.act(np.dot(self.W[fwd_mask], x) + self.b1[fwd_mask])
 
     def _decode(self, h, fwd_mask):
-        return self._sigmoid(np.dot(self.W[fwd_mask].T, h) + self.b2)
+        return self.act(np.dot(self.W[fwd_mask].T, h) + self.b2)
 
     def _sum_squared(self, x, z):
         return np.sum((x-z)**2.)
 
     def _sum_squared_prime(self, x, z):
         return -2. * (x - z)
+
+    def _corrupt(self, x):
+        return np.random.binomial(1, 1. - self.corruption_level, x.shape) * x
 
     def _init_cache(self, size):
         # Cache for input values of output layer
@@ -107,22 +146,23 @@ class Autoencoder(object):
 
         for (i, x) in enumerate(batch):
 
-            y = self._encode(x, fwd_mask)
+            corrupted_x = self._corrupt(x)
+            y = self._encode(corrupted_x, fwd_mask)
             # z = self._decode(y, fwd_mask)
             in_z = np.dot(self.W[fwd_mask].T, y) + self.b2
             if self.caching:
                 in_z += self.output_cache[batchIdx+i]
-            z = self._sigmoid(in_z)
+            z = self.act(in_z)
             err = self._sum_squared(x, z)
 
             batch_error += err
 
-            deltaOut = self._sum_squared_prime(x, z) * self._sigmoid_prime(z)
+            deltaOut = self._sum_squared_prime(x, z) * self.dact(z)
             r = np.outer(y[relative_err_mask], deltaOut)
             g_W += r
             g_b2 += deltaOut
 
-            deltaHidden = np.dot(self.W[err_mask], deltaOut) * self._sigmoid_prime(y)
+            deltaHidden = np.dot(self.W[err_mask], deltaOut) * self.dact(y)
 
             g_W += np.outer(deltaHidden[relative_err_mask], x)
             g_b1 += deltaHidden[relative_err_mask]
@@ -274,7 +314,7 @@ class Autoencoder(object):
             logs[str(h[-1])][Autoencoder.STR_TIMES] = node_times
 
             if supervisedDataCallback is not None:
-                if h[-1] == 0 or h[-1] % 10 == 9:
+                if h[-1] == 0 or h[-1] % 10 == 0:
                     traindata, testdata, K = supervisedDataCallback()
                     sup_fwd_mask = np.zeros(self.hidden_size, dtype=bool)
                     sup_fwd_mask[node_indices<=h[-1]] = True
@@ -326,6 +366,63 @@ class Autoencoder(object):
 
         return precision, recall, f1
 
+    def plot(self, data, hidden_grid=False, color = None):
+        if data.shape[1]==2:
+            hidden = self.encode_all(data) #np.array([encode(x,w,b,b_rec) for x in data.T]).T
+            if hidden_grid:
+                hidden = np.linspace(-2,2,data.shape[1])
+            reconstructed = self.decode_all(hidden) # np.array([decode(x,w,b,b_rec) for x in hidden.T]).T
+            # plot the encoded points
+            fig, ax = plt.subplots(1,2, figsize=(16,6))
+            hidden = hidden.flatten()
+            ax[0].plot(data[0][hidden>0],data[1][hidden>0],"r.")
+            ax[0].plot(data[0][hidden<=0],data[1][hidden<=0],"b.")
+            ax[0].set_title("data")
+            pts = ax[1].scatter(reconstructed[0], reconstructed[1], marker="+", c=hidden, cmap=plt.cm.bwr )
+            ax[1].set_ylim([-1., 1.])
+            ax[1].set_xlim([-1., 1.])
+            ax[1].set_title("reconstruction")
+            plt.colorbar(pts)
+            return fig
+        elif data.shape[1]==3:
+            arrowColors = ['b', 'r', 'g', 'k']
+
+            hidden = self.encode_all(data)
+            if hidden_grid:
+                hidden = np.linspace(-2,2,data.shape[0])
+            reconstructed = self.decode_all(hidden)
+
+            fig = plt.figure(figsize=(16,6))
+            ax = fig.add_subplot(131)
+            if color is not None:
+                ax.scatter(hidden[:,0],hidden[:,1], c=color)
+            else:
+                ax.scatter(hidden[:,0],hidden[:,1])
+            ax.set_title("Embedding(0vs1)")
+
+            ax = fig.add_subplot(132, projection='3d')
+            if color is not None:
+                ax.scatter(data[:,0], data[:,1], data[:,2], c=color)
+            else:
+                ax.scatter(data[:,0], data[:,1], data[:,2])
+            for (i, v) in enumerate(self.W):
+                a = Arrow3D([0., v[0]], [0., v[1]], [0., v[2]], mutation_scale=20, lw=3, arrowstyle="-|>", color=arrowColors[i])
+                ax.add_artist(a)
+            ax.set_title("Original Data")
+
+            ax = fig.add_subplot(133, projection='3d')
+            if color is not None:
+                ax.scatter(reconstructed[:,0], reconstructed[:,1], reconstructed[:,2], c = color)
+            else:
+                ax.scatter(reconstructed[:,0], reconstructed[:,1], reconstructed[:,2])
+            for (i, v) in enumerate(self.W):
+                a = Arrow3D([0., v[0]], [0., v[1]], [0., v[2]], mutation_scale=20, lw=3, arrowstyle="-|>", color=arrowColors[i])
+                ax.add_artist(a)
+            ax.set_title("Reconstructed data")
+            return fig
+        else:
+            return None
+
     def visualize_filters(self, mode, panel_shape=None, filter_shape=None, name=None):
         """
         Plot weight matrix in a grid of shape ``panel_shape`` with each cell showing the weights of a hidden node,
@@ -368,45 +465,65 @@ class Autoencoder(object):
 
 if __name__ == "__main__":
 
-    K = 10
-    hidden_size = 200
-    data_name = "mnist"
-    mode_name = "compound"
-    id = (mode_name + "-" + data_name + "-" + str(hidden_size))
+    hidden_size = 30
+    corruption_level = 0.2
+    log_level = 2
+    mini_batch_size = 20
+    stop_err_delta = 0.01
 
-    train_data, test_data, valid_data = utils.load_mnist()
-    DATA = (train_data, test_data, valid_data)
+    data = utils.load_mnist()
+    # data = utils.load_cifar()
+    # data = utils.load_movielens()
 
-    # # train_data, test_data = utils.load_cifar()
-    # # user_attribute_matrix, user_item_matrix = utils.load_movielens()
+    data_name = data['name']
+    K = data['classes']
+    train_data = data['train']
+    test_data = data['test']
+    DATA = (train_data, test_data)
 
-    # def test_elastic(hidden_size):
-    #     ae = Autoencoder(nvis=len(train_data[0][0]), nhid=hidden_size, log_level=1, caching=True)
-    #     strt = time.time()
-    #     logs = ae.train(train_data[0], elastic=True, epochs=None, mini_batch_size=20, stop_err_delta=0.01, supervisedDataCallback=func)
-    #     end = time.time()
-    #     print "Total Training Time: %.3f" % (end-strt)
-    #     ae.visualize_filters("GREY", name=id)
-    #     return logs
-    #
+    def test_elastic(hidden_size):
+        mode_name = "elastic"
+        id = (mode_name + "-" + data_name + "-" + str(hidden_size))
+        ae = Autoencoder(nvis=len(train_data[0][0]), nhid=hidden_size, corruption_level=corruption_level, log_level=log_level, caching=True)
+        strt = time.time()
+        logs = ae.train(train_data[0], elastic=True, epochs=None, mini_batch_size=mini_batch_size, stop_err_delta=stop_err_delta, supervisedDataCallback=func)
+        end = time.time()
+        print "Total Training Time: %.3f" % (end-strt)
+        ae.visualize_filters("GREY", name=id)
+        # codes = ae.encode_all(train_data)
+        # codes[codes>0.] = 1.
+        # codes[codes<=0.] = 0.
+        # codes = codes.astype(int)
+        # intCodes = [utils.bool2int(x) for x in codes]
+        # print intCodes
+        # for i in range(2**hidden_size):
+        #     print "Code %d" % i
+        #     userIds = [idx for (idx, v) in enumerate(intCodes) if v == i]
+        #     for user in userIds:
+        #         print dataset.users.getUser(user)
+        cPickle.dump(logs, open(utils.get_full_path(Config.PATH_EVAL_ROOT, "results-%s.pkl" % id), 'w'))
+        return logs
+
+
     def test_compound(hidden_size):
+        mode_name = "compound"
+        id = (mode_name + "-" + data_name + "-" + str(hidden_size))
         total_logs = {}
         for i in range(0, hidden_size, 10):
             s = i+1
-            ae = Autoencoder(nvis=len(train_data[0][0]), nhid=s, log_level=1, caching=False)
+            ae = Autoencoder(nvis=len(train_data[0][0]), nhid=s, corruption_level=corruption_level, log_level=log_level, caching=False)
             strt = time.time()
-            logs = ae.train(train_data[0], elastic=False, epochs=None, mini_batch_size=20, stop_err_delta=0.01)
+            logs = ae.train(train_data[0], elastic=False, epochs=None, mini_batch_size=mini_batch_size, stop_err_delta=stop_err_delta, supervisedDataCallback=func)
             end = time.time()
             print "Total Training Time: %.3f" % (end-strt)
             total_logs[str(i)] = logs[str(i)]
-            ae.visualize_filters("GREY", name=id)
+        ae.visualize_filters("GREY", name=id)
+        cPickle.dump(total_logs, open(utils.get_full_path(Config.PATH_EVAL_ROOT, "results-%s.pkl" % id), 'w'))
         return total_logs
 
-    # e_logs = test_elastic(hidden_size)
-    # cPickle.dump(e_logs, open(utils.get_full_path(Config.PATH_EVAL_ROOT, "results-%s.pkl" % id), 'w'))
 
-    c_logs = test_compound(hidden_size)
-    cPickle.dump(c_logs, open(utils.get_full_path(Config.PATH_EVAL_ROOT, "results-%s.pkl" % id), 'w'))
+    print test_elastic(hidden_size)
+    print test_compound(hidden_size)
 
     # e_logs = cPickle.load(open(utils.get_full_path(Config.PATH_EVAL_ROOT, "results-elastic.pkl"), 'r'))
     # c_logs = cPickle.load(open(utils.get_full_path(Config.PATH_EVAL_ROOT, "results-compound.pkl"), 'r'))

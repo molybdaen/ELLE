@@ -15,8 +15,12 @@ def get_full_path(*path):
 
 def load_mnist():
     with gzip.open(get_full_path(Config.PATH_DATA_ROOT, Config.MNIST_DATA_FILE), 'rb') as f:
-        tr,te,vl = cPickle.load(f)
-    return tr, te, vl
+        tr, te, vl = cPickle.load(f)
+    return {'train': tr,
+            'test': te,
+            'valid': vl,
+            'name': Config.STR_MNIST,
+            'classes': 10}
 
 def load_cifar():
     data = []
@@ -35,13 +39,19 @@ def load_cifar():
     dict = cPickle.load(fo)
     testdata = (dict["data"].astype(np.float) / float(np.max(dict["data"])), np.asarray(dict["labels"]))
     fo.close()
-    return ((data, labels), testdata)
+    return {'train': (data, labels),
+            'test': testdata,
+            'name': Config.STR_CIFAR,
+            'classes': 10}
 
 def load_movielens():
     data = MovielensDataset(get_full_path(Config.PATH_DATA_ROOT, Config.MOVIELENS_DATA_FILE))
     uamat = data.getUsersAttributesMatrix()
     uimat = data.getUserItemMatrix()
-    return uamat, uimat
+    return {'dataObj': data,
+            'userAttributeMatrix': uamat,
+            'userItemMatrix': uimat,
+            'name': Config.STR_MOVIELENS}
 
 def code1ofK(labels, K):
     KcodedLabels = []
@@ -51,17 +61,18 @@ def code1ofK(labels, K):
         KcodedLabels.append(codedK)
     return KcodedLabels
 
-
+def bool2int(x):
+    x = x[::-1]
+    y = 0
+    for i,j in enumerate(x):
+        y += j<<i
+    return y
 
 
 def validate(goldLabels, predictedLabels, K):
     labels = [str(class_label) for class_label in range(K)]
     (pre, rec, f1, sup) = precision_recall_fscore_support(goldLabels, predictedLabels, beta=1.0, labels=labels, pos_label=1, average=None, warn_for=('precision', 'recall', 'f-score'), sample_weight=None)
     np.set_printoptions(precision=3)
-    # print pre
-    # print rec
-    # print f1
-    # print sup
     return (pre, rec, f1, sup)
 
 
@@ -134,17 +145,3 @@ def visualize_weights(weights, panel_shape, filter_shape, mode):
 class GraphStructureError(Exception):
     def __init__(self):
         Exception.__init__(self)
-
-
-if __name__ == "__main__":
-    (train, test) = load_cifar()
-    # im = np.reshape(test[0][1], (3, 1024)).T * 254.
-    # im = np.uint8(np.reshape(im, (32, 32, 3)))
-    # print im.shape
-    # img = Image.fromarray(im, mode="RGB")
-    # img.show()
-    im = visualize_weights_RGB(train[0][0:2])
-    im.show()
-    # r = train[0][0:1024]
-    # g = train[0][1024:2048]
-    # b = train[0][2048:3072]
