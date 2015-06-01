@@ -465,7 +465,7 @@ class Autoencoder(object):
 
 if __name__ == "__main__":
 
-    hidden_size = 3
+    hidden_size = 301
     corruption_level = 0.2
     log_level = 2
     mini_batch_size = 20
