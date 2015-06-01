@@ -5,6 +5,7 @@ import gzip
 import cPickle
 import numpy as np
 from PIL import Image
+import os.path
 from os.path import join
 from sklearn.metrics import precision_recall_fscore_support
 from movielens import MovielensDataset
@@ -21,6 +22,22 @@ def load_mnist():
             'valid': vl,
             'name': Config.STR_MNIST,
             'classes': 10}
+
+
+def load_mnist_rotated():
+    datafile = get_full_path(Config.PATH_DATA_ROOT, Config.MNIST_ROTATED_DATA_FILE, Config.MNIST_ROTATED_FILE)
+    if os.path.exists(datafile):
+        with gzip.open(datafile, 'rb') as f:
+            data = cPickle.load(f)
+    else:
+        tr = open(get_full_path(Config.PATH_DATA_ROOT, Config.MNIST_ROTATED_DATA_FILE, r"mnist-all-rotation-normalized-float-train-valid.amat"), 'rb')
+        te = open(get_full_path(Config.PATH_DATA_ROOT, Config.MNIST_ROTATED_DATA_FILE, r"mnist-all-rotation-normalized-float-test.amat"), 'rb')
+        train = np.asarray([np.fromstring(x, dtype=float, sep=' ') for x in tr])
+        test = np.asarray([np.fromstring(x, dtype=float, sep=' ') for x in te])
+        data = {'train': (train[:,:-1], train[:,-1].astype(int)), 'test': (test[:,:-1], test[:,-1].astype(int)), 'name': Config.STR_MNIST_ROTATED, 'classes': 10}
+        with gzip.open(datafile, 'wb') as f:
+            cPickle.dump(data, f, protocol=-1)
+    return data
 
 def load_cifar():
     data = []
@@ -109,7 +126,7 @@ def visualize_weights_GREY(weights, panel_shape, tile_size):
 
 def visualize_weights_RGB(weights, panel_shape=(10, 10)):
 
-    tile_len = np.sqrt(weights.shape[1] / 3)
+    tile_len = int(np.sqrt(weights.shape[1] / 3))
     tile_size = (tile_len, tile_len)
     panel_shape = panel_shape
 

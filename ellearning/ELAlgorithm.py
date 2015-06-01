@@ -41,7 +41,7 @@ class Autoencoder(object):
     STR_TIMES = "times"
     STR_SCORES = "scores"
 
-    def __init__(self, nvis, nhid, eta=0.1, corruption_level=0.2, caching=True, log_level=1, actfunc="tanh"):
+    def __init__(self, nvis, nhid, eta=0.1, corruption_level=0.2, caching=True, log_level=1, actfunc="sig"):
 
         self.visible_size = nvis
         self.hidden_size = nhid
@@ -56,15 +56,15 @@ class Autoencoder(object):
         self.log_level = log_level
         self.corruption_level = corruption_level
 
-        if actfunc == "tanh":
-            self.act = self._tanh
-            self.dact = self._tanh_prime
-        elif actfunc == "sig":
-            self.act = self._sigmoid
-            self.dact = self._sigmoid_prime
-        else:
-            self.act = self._sigmoid
-            self.dact = self._sigmoid_prime
+        # if actfunc == "tanh":
+        #     self.act = self._tanh
+        #     self.dact = self._tanh_prime
+        # elif actfunc == "sig":
+        #     self.act = self._sigmoid
+        #     self.dact = self._sigmoid_prime
+        # else:
+        #     self.act = self._sigmoid
+        #     self.dact = self._sigmoid_prime
 
     def _sigmoid(self, x):
         return 1. / (1. + np.exp(-x))
@@ -79,10 +79,10 @@ class Autoencoder(object):
         return 1. - y**2.
 
     def _encode(self, x, fwd_mask):
-        return self.act(np.dot(self.W[fwd_mask], x) + self.b1[fwd_mask])
+        return self._sigmoid(np.dot(self.W[fwd_mask], x) + self.b1[fwd_mask])
 
     def _decode(self, h, fwd_mask):
-        return self.act(np.dot(self.W[fwd_mask].T, h) + self.b2)
+        return self._sigmoid(np.dot(self.W[fwd_mask].T, h) + self.b2)
 
     def _sum_squared(self, x, z):
         return np.sum((x-z)**2.)
@@ -152,17 +152,17 @@ class Autoencoder(object):
             in_z = np.dot(self.W[fwd_mask].T, y) + self.b2
             if self.caching:
                 in_z += self.output_cache[batchIdx+i]
-            z = self.act(in_z)
+            z = self._sigmoid(in_z)
             err = self._sum_squared(x, z)
 
             batch_error += err
 
-            deltaOut = self._sum_squared_prime(x, z) * self.dact(z)
+            deltaOut = self._sum_squared_prime(x, z) * self._sigmoid_prime(z)
             r = np.outer(y[relative_err_mask], deltaOut)
             g_W += r
             g_b2 += deltaOut
 
-            deltaHidden = np.dot(self.W[err_mask], deltaOut) * self.dact(y)
+            deltaHidden = np.dot(self.W[err_mask], deltaOut) * self._sigmoid_prime(y)
 
             g_W += np.outer(deltaHidden[relative_err_mask], x)
             g_b1 += deltaHidden[relative_err_mask]
@@ -465,7 +465,7 @@ class Autoencoder(object):
 
 if __name__ == "__main__":
 
-    hidden_size = 30
+    hidden_size = 3
     corruption_level = 0.2
     log_level = 2
     mini_batch_size = 20
@@ -501,23 +501,25 @@ if __name__ == "__main__":
         #     userIds = [idx for (idx, v) in enumerate(intCodes) if v == i]
         #     for user in userIds:
         #         print dataset.users.getUser(user)
+        ae.dump_model(id)
         cPickle.dump(logs, open(utils.get_full_path(Config.PATH_EVAL_ROOT, "results-%s.pkl" % id), 'w'))
         return logs
 
 
     def test_compound(hidden_size):
         mode_name = "compound"
-        id = (mode_name + "-" + data_name + "-" + str(hidden_size))
         total_logs = {}
         for i in range(0, hidden_size, 10):
             s = i+1
+            id = (mode_name + "-" + data_name + "-" + str(s))
             ae = Autoencoder(nvis=len(train_data[0][0]), nhid=s, corruption_level=corruption_level, log_level=log_level, caching=False)
             strt = time.time()
             logs = ae.train(train_data[0], elastic=False, epochs=None, mini_batch_size=mini_batch_size, stop_err_delta=stop_err_delta, supervisedDataCallback=func)
             end = time.time()
             print "Total Training Time: %.3f" % (end-strt)
             total_logs[str(i)] = logs[str(i)]
-        ae.visualize_filters("GREY", name=id)
+            ae.visualize_filters("GREY", name=id)
+            ae.dump_model(str(id))
         cPickle.dump(total_logs, open(utils.get_full_path(Config.PATH_EVAL_ROOT, "results-%s.pkl" % id), 'w'))
         return total_logs
 
@@ -525,7 +527,7 @@ if __name__ == "__main__":
     print test_elastic(hidden_size)
     print test_compound(hidden_size)
 
-    # e_logs = cPickle.load(open(utils.get_full_path(Config.PATH_EVAL_ROOT, "results-elastic.pkl"), 'r'))
+    # e_logs = cPickle.load(open(utils.get_full_path(Config.PATH_EVAL_ROOT, "results-elastic-MNIST-30.pkl"), 'r'))
     # c_logs = cPickle.load(open(utils.get_full_path(Config.PATH_EVAL_ROOT, "results-compound.pkl"), 'r'))
 
     # from viz.plotty import Plotty
