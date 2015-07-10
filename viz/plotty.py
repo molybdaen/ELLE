@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from utils import utils
 from config import Config
 import numpy as np
+import scipy
 from ellearning.ELAlgorithm import Autoencoder
 import numpy.fft as fft
 
@@ -263,3 +264,213 @@ class Plotty(object):
 #####################
 #### END Figures ####
 #####################
+
+def pickleFromWindowsEncoding(filename):
+    newfile = filename + "-formatted.pkl"
+    newFileH = open(newfile, 'wb')
+    for l in open(filename, 'rb'):
+        s = l.replace("\r\n", "\n")
+        newFileH.write(s)
+    newFileH.close()
+    return cPickle.load(open(newfile, "rb"))
+
+def extractInfo(logs):
+    e_tmp_list = [int(k) for k in logs if representsInt(k)]
+    e_num_tests = max(e_tmp_list)
+
+    layer_sizes = []
+    scores_f1, pres, recs = [], [], []
+    errors, errors_sep, last_errors = [], [], []
+    times, times_integrated, times_all, times_overall = [], [0.], [], []
+    prev_errors, prev_times = [], []
+
+    for nodeIdx in range(0, e_num_tests+1):
+        if str(nodeIdx) in logs:
+            prev_errors += logs[str(nodeIdx)][Autoencoder.STR_ERRORS]
+            prev_times += logs[str(nodeIdx)][Autoencoder.STR_TIMES]
+            times_overall += logs[str(nodeIdx)][Autoencoder.STR_TIMES]
+            if Autoencoder.STR_SCORES in logs[str(nodeIdx)]:
+                layer_sizes.append(nodeIdx+1)
+                (pre, rec, f1) = logs[str(nodeIdx)][Autoencoder.STR_SCORES]
+                time = logs[str(nodeIdx)][Autoencoder.STR_TIMES]
+                error = logs[str(nodeIdx)][Autoencoder.STR_ERRORS]
+
+                times.append(sum(time))
+                times_all.append(time)
+
+                scores_f1.append(np.mean(f1))
+                pres.append(np.mean(pre))
+                recs.append(np.mean(rec))
+
+                errors += error
+                errors_sep.append(prev_errors)
+                prev_errors = []
+                last_errors.append(error[-1])
+
+                times_integrated.append(times_integrated[-1]+np.sum(prev_times))
+                prev_times = []
+
+    return layer_sizes, scores_f1, pres, recs, errors_sep, times, times_integrated[1:], times_all, times_overall
+
+def plotScores(figIdx, dataset, e_layer_sizes, e_pres, e_recs, e_scores_f1, c_layer_sizes, c_pres, c_recs, c_scores_f1):
+    plt.figure(figIdx)
+
+    plt.subplot(3,1,1)
+    plt.title("%s - Classification (Mean)" % dataset)
+    # (e_lpre, c_lpre, e_lrec, c_lrec, e_lf1, c_lf1) = plt.plot(e_layer_sizes, e_pres, 'wo', c_layer_sizes,  c_pres, 'ko', e_layer_sizes,  e_recs, 'w^', c_layer_sizes,  c_recs, 'k^', e_layer_sizes, e_scores_f1, 'b.', c_layer_sizes,  c_scores_f1, 'r.')
+    (e_lpre, c_lpre) = plt.plot(e_layer_sizes, e_pres, 'ro', c_layer_sizes,  c_pres, 'bo')
+    plt.setp(e_lpre, label='Elastic')
+    plt.setp(c_lpre, label='Compound')
+    plt.ylabel("Precision")
+    plt.grid(True)
+    plt.legend(loc='lower right', numpoints=1)
+
+    plt.subplot(3,1,2)
+    (e_lrec, c_lrec) = plt.plot(e_layer_sizes,  e_recs, 'r^', c_layer_sizes,  c_recs, 'b^')
+    plt.setp(e_lrec, label='Elastic')
+    plt.setp(c_lrec, label='Compound')
+    plt.ylabel("Recall")
+    plt.grid(True)
+    plt.legend(loc='lower right', numpoints=1)
+
+    plt.subplot(3,1,3)
+    e_rects = plt.bar(np.asarray(e_layer_sizes), e_scores_f1, 3, alpha=0.8, color='r', error_kw={'ecolor': '0.3'}, label='Elastic')
+    c_rects = plt.bar(np.asarray(c_layer_sizes) + 3, c_scores_f1, 3, alpha=0.8, color='b', error_kw={'ecolor': '0.3'}, label='Compound')
+
+    plt.ylabel("F1")
+    plt.grid(True)
+    plt.legend(loc='lower right', numpoints=1)
+    plt.xlabel('Layer Size')
+
+    plt.savefig(utils.get_full_path(Config.PATH_EVAL_ROOT, "%s-scores.pdf" % dataset))
+    # plt.axis([0, 100, 0, 1])
+
+    # plt.ylabel('Mean Classification Scores')
+
+def plotTimings(figIdx, dataset, e_layer_sizes, e_times, e_times_all, e_epochs, c_layer_sizes, c_times, c_epochs):
+    plt.figure(figIdx)
+    plt.subplot(3,1,1)
+    plt.title("%s - Timing" % dataset)
+    # (e_lpre, c_lpre, e_lrec, c_lrec, e_lf1, c_lf1) = plt.plot(e_layer_sizes, e_pres, 'wo', c_layer_sizes,  c_pres, 'ko', e_layer_sizes,  e_recs, 'w^', c_layer_sizes,  c_recs, 'k^', e_layer_sizes, e_scores_f1, 'b.', c_layer_sizes,  c_scores_f1, 'r.')
+    (e_ltimes, c_ltimes) = plt.plot(e_layer_sizes, e_times, 'r', c_layer_sizes,  c_times, 'b')
+    plt.setp(e_ltimes, label='Elastic')
+    plt.setp(c_ltimes, label='Compound')
+    plt.ylabel("Training Time [s]")
+    plt.grid(True)
+    plt.legend(loc='upper left', numpoints=1)
+
+    plt.subplot(3,1,2)
+    (e_lepochs, c_lepochs) = plt.plot(e_layer_sizes, e_epochs, 'r', c_layer_sizes,  c_epochs, 'b')
+    plt.setp(e_lepochs, label='Elastic')
+    plt.setp(c_lepochs, label='Compound')
+    plt.ylabel("Epochs")
+    plt.grid(True)
+    plt.legend(loc='upper left', numpoints=1)
+    plt.savefig(utils.get_full_path(Config.PATH_EVAL_ROOT, "%s-timing.pdf" % dataset))
+
+    plt.subplot(3,1,3)
+    (e_ltimepe, c_ltimepe) = plt.plot(e_layer_sizes, [np.mean(x) for x in e_times_all], 'r', c_layer_sizes, np.asarray(c_times)/np.asarray(c_epochs), 'b')
+    plt.setp(e_ltimepe, label='Elastic')
+    plt.setp(c_ltimepe, label='Compound')
+    plt.ylabel("Time per epoch [s]")
+    plt.grid(True)
+    plt.legend(loc='upper left', numpoints=1)
+    plt.xlabel('Layer Size')
+    plt.savefig(utils.get_full_path(Config.PATH_EVAL_ROOT, "%s-timing.pdf" % dataset))
+
+def plotErrors(figIdx, dataset, e_layer_sizes, e_errors, c_layer_sizes, c_errors):
+    plt.figure(figIdx)
+    plt.title("%s - Error" % dataset)
+    # (e_lpre, c_lpre, e_lrec, c_lrec, e_lf1, c_lf1) = plt.plot(e_layer_sizes, e_pres, 'wo', c_layer_sizes,  c_pres, 'ko', e_layer_sizes,  e_recs, 'w^', c_layer_sizes,  c_recs, 'k^', e_layer_sizes, e_scores_f1, 'b.', c_layer_sizes,  c_scores_f1, 'r.')
+    (e_lerr, c_lerr) = plt.plot(e_layer_sizes, e_errors, 'r', c_layer_sizes,  c_errors, 'b')
+    plt.setp(e_lerr, label='Elastic')
+    plt.setp(c_lerr, label='Compound')
+    plt.ylabel("Error")
+    plt.grid(True)
+    plt.legend(loc='upper right', numpoints=1)
+    plt.xlabel('Layer Size')
+    plt.savefig(utils.get_full_path(Config.PATH_EVAL_ROOT, "%s-error.pdf" % dataset))
+
+def plotErrorsSep(figIdx, dataset, e_errors_sep, c_errors_sep):
+    plt.figure(figIdx)
+    plt.title("%s - Error (per layer size)" % dataset)
+    for idx, errors in enumerate(e_errors_sep):
+        ax = plt.subplot(3,10,idx)
+        plt.plot(e_errors_sep[idx], 'r', c_errors_sep[idx], 'b')
+        ax.get_xaxis().set_ticks([])
+        ax.get_yaxis().set_ticks([])
+        plt.grid(True)
+        plt.yticks()
+        plt.tight_layout()
+    plt.savefig(utils.get_full_path(Config.PATH_EVAL_ROOT, "%s-error-sep.pdf" % dataset))
+
+if __name__ == "__main__":
+
+    dataset = "MNIST"
+    maxSize = 301
+
+    fileName = utils.get_full_path(Config.PATH_EVAL_ROOT, dataset, "elastic", "results-elastic-"+dataset+"-"+str(maxSize)+".pkl")
+    obj = pickleFromWindowsEncoding(fileName)
+    (layer_sizes, scores_f1, pres, recs, errors_sep, times, times_integrated, times_all, times_overall) = extractInfo(obj)
+
+    c_fileName = utils.get_full_path(Config.PATH_EVAL_ROOT, dataset, "compound", "results-compound-"+dataset+"-"+str(maxSize)+".pkl")
+    c_obj = pickleFromWindowsEncoding(c_fileName)
+    (c_layer_sizes, c_scores_f1, c_pres, c_recs, c_errors_sep, c_times, c_times_integrated, c_times_all, c_times_overall) = extractInfo(c_obj)
+
+    epochs = [len(x) for x in times_all]
+    errors = [x[-1] for x in errors_sep]
+    c_epochs = [len(x) for x in c_times_all]
+    c_errors = [x[-1] for x in c_errors_sep]
+
+    print layer_sizes
+    print scores_f1
+    print pres
+    print recs
+    print errors_sep
+    print epochs
+    print times
+    print times_integrated
+    print times_all
+
+    print ""
+    print c_layer_sizes
+    print c_scores_f1
+    print c_pres
+    print c_recs
+    print c_errors_sep
+    print c_epochs
+    print c_times
+    print c_times_integrated
+    print c_times_all
+
+    # plt.figure(1)
+    # plt.subplot(1,1,1)
+    # plt.plot(layer_sizes, scores_f1, 'r', c_layer_sizes, c_scores_f1, 'b')
+    # plt.grid(True)
+    # plt.xlabel("Hidden Layer Size")
+    # plt.ylabel("F1")
+    #
+    # plt.figure(2)
+    # plt.subplot(1,1,1)
+    # plt.plot(layer_sizes, times_integrated, 'r', c_layer_sizes, c_times, 'b')
+    # plt.grid(True)
+    # plt.xlabel("Hidden Layer Size")
+    # plt.ylabel("Time[s]")
+
+    plotScores(3, dataset, layer_sizes, pres, recs, scores_f1, c_layer_sizes, c_pres, c_recs, c_scores_f1)
+    plotTimings(4, dataset, layer_sizes, times_integrated, times_all, epochs, c_layer_sizes, c_times, c_epochs)
+    plotErrors(5, dataset, layer_sizes, errors, c_layer_sizes, c_errors)
+    plotErrorsSep(6, dataset, errors_sep, c_errors_sep)
+    # plt.figure(6)
+    # plt.plot(errors_sep[-1], 'r', c_errors_sep[-1], 'b')
+    plt.show()
+
+    # plt.figure(4)
+    # plt.subplot(1,1,1)
+    # plt.plot(layer_sizes, times_integrated)
+    # plt.grid(True)
+    # plt.title("Elastic")
+    # plt.xlabel('Hidden Layer Size')
+    # plt.ylabel('Training Time [s] (per node)')
+    # plt.show()
+    # c_logs = cPickle.load(open(utils.get_full_path(Config.PATH_EVAL_ROOT, "results-compound.pkl"), 'r'))

@@ -502,7 +502,7 @@ if __name__ == "__main__":
         #     for user in userIds:
         #         print dataset.users.getUser(user)
         ae.dump_model(id)
-        cPickle.dump(logs, open(utils.get_full_path(Config.PATH_EVAL_ROOT, "results-%s.pkl" % id), 'w'))
+        cPickle.dump(logs, open(utils.get_full_path(Config.PATH_EVAL_ROOT, "results-%s.pkl" % id), 'wb'))
         return logs
 
 
@@ -520,7 +520,7 @@ if __name__ == "__main__":
             total_logs[str(i)] = logs[str(i)]
             ae.visualize_filters("GREY", name=id)
             ae.dump_model(str(id))
-        cPickle.dump(total_logs, open(utils.get_full_path(Config.PATH_EVAL_ROOT, "results-%s.pkl" % id), 'w'))
+        cPickle.dump(total_logs, open(utils.get_full_path(Config.PATH_EVAL_ROOT, "results-%s.pkl" % id), 'wb'))
         return total_logs
 
 
